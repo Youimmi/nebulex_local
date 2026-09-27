@@ -8,6 +8,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Bug fixes
 
+- [Nebulex.Adapters.Local] Implement `Nebulex.Adapter.CompositeKV` using
+  Nebulex's default callbacks, restoring compatibility with Nebulex `main`.
+  This fork tracks the core's `main` branch, where this behaviour is required.
+  Composite operations follow the core's updated semantics, including storing
+  and popping cached `nil` values.
 - [Nebulex.Adapters.Local] Fixed two race conditions in the promotion of
   entries from the older generation into the newer one on `fetch` (and the
   commands built on it). First, the promotion removed the entry from the

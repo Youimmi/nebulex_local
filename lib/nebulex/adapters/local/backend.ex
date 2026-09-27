@@ -3,6 +3,8 @@ defmodule Nebulex.Adapters.Local.Backend do
 
   alias Nebulex.Adapters.Local.Metadata
 
+  # Expanded when backend modules compile, before runtime coverage starts.
+  # coveralls-ignore-start
   @doc false
   defmacro __using__(_opts) do
     quote do
@@ -59,6 +61,8 @@ defmodule Nebulex.Adapters.Local.Backend do
       end
     end
   end
+
+  # coveralls-ignore-stop
 
   @doc """
   Helper function for returning the child spec for the given backend.

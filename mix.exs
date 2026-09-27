@@ -77,7 +77,7 @@ defmodule NebulexAdaptersLocal.MixProject do
     if path = System.get_env("NEBULEX_PATH") do
       {:nebulex, path: path}
     else
-      {:nebulex, "~> 3.0"}
+      {:nebulex, github: "elixir-nebulex/nebulex", branch: "main", depth: 1}
     end
   end
 

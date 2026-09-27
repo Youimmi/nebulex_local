@@ -4,6 +4,7 @@ defmodule Nebulex.Adapters.LocalErrorTest do
   # Inherit error tests
   use Nebulex.Cache.KVErrorTest
   use Nebulex.Cache.KVExpirationErrorTest
+  use Nebulex.Cache.CompositeKVErrorTest
 
   import Mimic, only: [verify_on_exit!: 1, expect: 3]
 

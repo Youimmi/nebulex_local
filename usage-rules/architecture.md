@@ -98,6 +98,7 @@ lib/
 |---|---|
 | `Nebulex.Adapter` | Required — `init/1`, adapter lifecycle |
 | `Nebulex.Adapter.KV` | `fetch`, `put`, `delete`, `take`, `has_key?`, `ttl`, `expire`, `put_all`, `get_all` |
+| `Nebulex.Adapter.CompositeKV` | Default `get_and_update`, `update`, `fetch_or_store`, and `get_or_store` callbacks |
 | `Nebulex.Adapter.Queryable` | `get_all`, `count_all`, `delete_all` via ETS match specs |
 | `Nebulex.Adapter.Transaction` | Optimistic locking via `Nebulex.Locks` |
 | `Nebulex.Adapter.Observable` | Cache entry events via `Nebulex.Streams` (optional) |
@@ -124,7 +125,7 @@ setting `backend: :shards` in config.
 # With local nebulex core checkout (recommended during development)
 NEBULEX_PATH=nebulex mix test
 
-# Against published nebulex package
+# Against the tracked Nebulex main branch
 mix test
 ```
 

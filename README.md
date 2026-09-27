@@ -20,12 +20,15 @@ generational caching, concurrency handling, and configuration options.
 
 ## Installation
 
+This fork tracks Nebulex `main` and implements the
+`Nebulex.Adapter.CompositeKV` behaviour required by that branch.
+
 Add `:nebulex_local` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
   [
-    {:nebulex_local, "~> 3.0"},
+    {:nebulex_local, github: "Youimmi/nebulex_local", branch: "main"},
     {:telemetry, "~> 0.4 or ~> 1.0"}, # For observability/telemetry support
     {:decorator, "~> 1.4"},           # For declarative caching
     {:shards, "~> 1.1"},              # For high concurrency workloads with partitioning
