@@ -1,6 +1,12 @@
 defmodule Nebulex.Adapters.LocalDuplicateKeysTest do
   use ExUnit.Case, async: true
 
+  import Ex2ms
+
+  alias Nebulex.Adapters.LocalDuplicateKeysTest.{ETS, Shards}
+
+  ## Internals
+
   defmodule ETS do
     use Nebulex.Cache,
       otp_app: :nebulex_local,
@@ -13,9 +19,7 @@ defmodule Nebulex.Adapters.LocalDuplicateKeysTest do
       adapter: Nebulex.Adapters.Local
   end
 
-  import Ex2ms
-
-  alias Nebulex.Adapters.LocalDuplicateKeysTest.{ETS, Shards}
+  ## Tests
 
   setup do
     {:ok, ets} = ETS.start_link(backend_type: :duplicate_bag)
@@ -117,6 +121,17 @@ defmodule Nebulex.Adapters.LocalDuplicateKeysTest do
         assert cache.count_all!() == 6
         assert cache.delete_all!() == 6
         assert cache.count_all!() == 0
+      end)
+    end
+
+    test "count_all, delete_all and stream with {:in, keys}", %{caches: caches} do
+      for_all_caches(caches, fn cache ->
+        :ok = cache.put_all(a: 1, a: 2, a: 2, b: 1, b: 2, c: 1)
+
+        assert cache.count_all!(in: [:a, :b]) == 5
+        assert cache.stream!(in: [:a]) |> Enum.sort() == [a: 1, a: 2, a: 2]
+        assert cache.delete_all!(in: [:a, :b]) == 5
+        assert cache.count_all!() == 1
       end)
     end
 

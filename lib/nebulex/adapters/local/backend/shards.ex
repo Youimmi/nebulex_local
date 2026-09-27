@@ -2,6 +2,12 @@ if Code.ensure_loaded?(:shards) do
   defmodule Nebulex.Adapters.Local.Backend.Shards do
     @moduledoc false
 
+    use Nebulex.Adapters.Local.Backend
+
+    alias Nebulex.Adapters.Local.Metadata
+
+    ## Internals
+
     defmodule __MODULE__.DynamicSupervisor do
       @moduledoc false
       use DynamicSupervisor
@@ -24,10 +30,6 @@ if Code.ensure_loaded?(:shards) do
         DynamicSupervisor.init(strategy: :one_for_one)
       end
     end
-
-    use Nebulex.Adapters.Local.Backend
-
-    alias Nebulex.Adapters.Local.Metadata
 
     ## API
 
@@ -72,6 +74,8 @@ if Code.ensure_loaded?(:shards) do
 
       {:ok, pid, tab}
     end
+
+    ## Private functions
 
     defp table_spec(opts) do
       %{
