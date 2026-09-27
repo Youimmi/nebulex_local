@@ -8,6 +8,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Bug fixes
 
+- [Nebulex.Adapters.Local.Generation] Skip eviction counting when statistics
+  are disabled, preventing generation rotation and cache clearing from crashing.
+
 - [Nebulex.Adapters.Local] Implement `Nebulex.Adapter.CompositeKV` using
   Nebulex's default callbacks, restoring compatibility with Nebulex `main`.
   This fork tracks the core's `main` branch, where this behaviour is required.
