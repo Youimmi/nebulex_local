@@ -407,15 +407,24 @@ defmodule Nebulex.Adapters.LocalTest do
       end
 
       test "count_all and delete_all with query {:in, keys} exclude expired entries", %{
-        cache: cache
+        cache: cache,
+        name: name
       } do
         :ok = cache.put_all(a: 1, b: 2)
         :ok = cache.put_all([c: 3, d: 4], ttl: 100)
 
         _ = t_sleep(200)
 
+        # `count_all` skips the expired entries but leaves them in the table.
         assert cache.count_all!(in: [:a, :b, :c, :d]) == 2
+        assert get_from_new(cache, name, :c) == 3
+        assert get_from_new(cache, name, :d) == 4
+
+        # `delete_all` removes the expired entries without counting them.
         assert cache.delete_all!(in: [:a, :b, :c, :d]) == 2
+        refute get_from_new(cache, name, :c)
+        refute get_from_new(cache, name, :d)
+        assert cache.count_all!() == 0
       end
 
       test "queries with {:in, keys} match tagged entries", %{cache: cache} do
@@ -436,6 +445,17 @@ defmodule Nebulex.Adapters.LocalTest do
         assert cache.stream!(in: [{:a, 1}, {:b, {:c, 3}}]) |> Enum.sort() == Enum.sort(entries)
       end
 
+      test "stream with query {:in, keys} (select: :key and select: :value)", %{cache: cache} do
+        :ok = cache.put_all([{:a, 1}, {{:b, 2}, 2}, {%{c: 3}, 3}])
+
+        keys = [:a, {:b, 2}, %{c: 3}, :unknown]
+
+        assert cache.stream!(in: keys, select: :key) |> Enum.sort() ==
+                 Enum.sort([:a, {:b, 2}, %{c: 3}])
+
+        assert cache.stream!(in: keys, select: :value) |> Enum.sort() == [1, 2, 3]
+      end
+
       test "queries with {:in, keys} handle reserved match-spec atoms", %{cache: cache} do
         :ok = cache.put_all(%{:_ => 1, :"$1" => 2, :a => 3, {:_, :x} => 4, %{a: 1} => 5})
         :ok = cache.put(%{a: 1, b: 2}, 6)
@@ -454,7 +474,7 @@ defmodule Nebulex.Adapters.LocalTest do
         assert cache.count_all!() == 6
       end
 
-      test "queries with {:in, keys} batch reserved match-spec atoms with ordinary keys", %{
+      test "queries with {:in, keys} mix reserved match-spec atoms with ordinary keys", %{
         cache: cache
       } do
         :ok = cache.put_all(%{:a => 1, :b => 2, :"$1" => 3, {:_, :x} => 4, %{a: 1} => 5})
@@ -475,7 +495,7 @@ defmodule Nebulex.Adapters.LocalTest do
       } do
         # A single match spec matching all these map keys would exceed the
         # ETS guard-depth limit (`SystemLimitError` at ~1300 keys); the
-        # adapter must chunk them.
+        # adapter must look the keys up instead of matching them.
         keys = for i <- 1..2000, do: %{i: i}
 
         :ok = cache.put_all(Enum.map(keys, &{&1, 1}))
@@ -951,6 +971,33 @@ defmodule Nebulex.Adapters.LocalTest do
 
         assert cache.count_all!() == 2
       end
+
+      test "count_all and delete_all with {:in, keys} (entry in both generations counts once)", %{
+        cache: cache,
+        name: name
+      } do
+        :ok = cache.put(:a, 1)
+
+        _ = new_generation(cache, name)
+
+        # Simulate a promotion in flight: the entry has been copied into the
+        # newer generation but not yet removed from the older one.
+        %{backend: backend} = Adapter.lookup_meta(name)
+
+        [newer, older] = cache.with_dynamic_cache(name, fn -> cache.generations() end)
+
+        [entry] = backend.lookup(older, :a)
+        true = backend.insert(newer, entry)
+
+        assert get_from_new(cache, name, :a) == 1
+        assert get_from_old(cache, name, :a) == 1
+
+        assert cache.count_all!(in: [:a]) == 1
+        assert cache.delete_all!(in: [:a]) == 1
+
+        refute get_from_new(cache, name, :a)
+        refute get_from_old(cache, name, :a)
+      end
     end
 
     describe "generation" do
@@ -1095,6 +1142,32 @@ defmodule Nebulex.Adapters.LocalTest do
           misses = Task.await_many(tasks, :timer.seconds(30))
 
           assert Enum.sum(misses) == 0
+        end
+      end
+
+      test "concurrent get_all calls with the same keys report no false misses", %{
+        cache: cache,
+        name: name
+      } do
+        keys = Enum.to_list(1..500)
+
+        # Same race as above, driven by the bulk read path: every concurrent
+        # `get_all` must return every cached entry.
+        for _round <- 1..4 do
+          :ok = cache.put_all(Enum.map(keys, &{&1, &1}))
+
+          _ = new_generation(cache, name)
+
+          tasks =
+            for _ <- 1..8 do
+              task_async(cache, name, fn ->
+                length(cache.get_all!(in: keys))
+              end)
+            end
+
+          counts = Task.await_many(tasks, :timer.seconds(30))
+
+          assert Enum.uniq(counts) == [500]
         end
       end
 

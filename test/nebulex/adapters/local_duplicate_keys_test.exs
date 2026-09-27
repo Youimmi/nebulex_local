@@ -120,6 +120,17 @@ defmodule Nebulex.Adapters.LocalDuplicateKeysTest do
       end)
     end
 
+    test "count_all, delete_all and stream with {:in, keys}", %{caches: caches} do
+      for_all_caches(caches, fn cache ->
+        :ok = cache.put_all(a: 1, a: 2, a: 2, b: 1, b: 2, c: 1)
+
+        assert cache.count_all!(in: [:a, :b]) == 5
+        assert cache.stream!(in: [:a]) |> Enum.sort() == [a: 1, a: 2, a: 2]
+        assert cache.delete_all!(in: [:a, :b]) == 5
+        assert cache.count_all!() == 1
+      end)
+    end
+
     test "get_all and stream using match_spec queries", %{caches: caches} do
       for_all_caches(caches, fn cache ->
         :ok = cache.put_all(a: 1, a: 2, a: 2, b: 1, b: 2, c: 1)
