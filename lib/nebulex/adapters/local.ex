@@ -805,16 +805,16 @@ defmodule Nebulex.Adapters.Local do
 
   """
 
-  # Provide Cache Implementation
+  # Provide Cache Implementation.
   @behaviour Nebulex.Adapter
   @behaviour Nebulex.Adapter.KV
   @behaviour Nebulex.Adapter.Queryable
   @behaviour Nebulex.Adapter.Transaction
 
-  # Inherit default info implementation
+  # Inherit default info implementation.
   use Nebulex.Adapters.Common.Info
 
-  # Inherit default observable implementation
+  # Inherit default observable implementation.
   use Nebulex.Adapter.Observable
 
   import Nebulex.Utils
@@ -827,6 +827,28 @@ defmodule Nebulex.Adapters.Local do
   alias Nebulex.Time
 
   ## Types & Internal definitions
+
+  # Inline common instructions.
+  @compile [
+    inline: [
+      fetch_entry: 4,
+      pop_entry: 4,
+      list_gen: 1,
+      newer_gen: 1
+    ]
+  ]
+
+  # Max number of attempts for an operation that hits a deleted generation.
+  @max_retries 3
+
+  # Cache Entry.
+  defrecord(:entry,
+    key: nil,
+    value: nil,
+    touched: nil,
+    exp: nil,
+    tag: nil
+  )
 
   @typedoc "Adapter's backend type"
   @type backend() :: :ets | :shards
@@ -855,15 +877,6 @@ defmodule Nebulex.Adapters.Local do
           pos_integer()
           | (limit :: :size | :memory, current :: non_neg_integer(), max :: non_neg_integer() ->
                timeout :: pos_integer())
-
-  # Cache Entry
-  defrecord(:entry,
-    key: nil,
-    value: nil,
-    touched: nil,
-    exp: nil,
-    tag: nil
-  )
 
   ## Nebulex.Adapter
 
@@ -902,27 +915,27 @@ defmodule Nebulex.Adapters.Local do
 
   @impl true
   def init(opts) do
-    # Validate options
+    # Validate options.
     opts = __MODULE__.Options.validate_adapter_opts!(opts)
 
-    # Required options
+    # Required options.
     cache = Keyword.fetch!(opts, :cache)
     telemetry = Keyword.fetch!(opts, :telemetry)
     telemetry_prefix = Keyword.fetch!(opts, :telemetry_prefix)
 
-    # Init internal metadata table
+    # Init internal metadata table.
     meta_tab = opts[:meta_tab] || Metadata.init()
 
-    # Init stats_counter
+    # Init stats_counter.
     stats_counter =
       if Keyword.fetch!(opts, :stats) == true do
         Stats.init(telemetry_prefix)
       end
 
-    # Resolve the backend to be used
+    # Resolve the backend to be used.
     backend = Keyword.fetch!(opts, :backend)
 
-    # Build adapter metadata
+    # Build adapter metadata.
     adapter_meta = %{
       name: opts[:name] || cache,
       telemetry: telemetry,
@@ -934,7 +947,7 @@ defmodule Nebulex.Adapters.Local do
       started_at: DateTime.utc_now()
     }
 
-    # Build adapter child_spec
+    # Build adapter child_spec.
     child_spec = Backend.child_spec(backend, [adapter_meta: adapter_meta] ++ opts)
 
     {:ok, child_spec, adapter_meta}
@@ -962,26 +975,6 @@ defmodule Nebulex.Adapters.Local do
       |> fetch_entry(backend, older, key)
       |> maybe_promote_entry(name, backend, newer, older, key)
     end
-  end
-
-  # An entry found in the older generation is moved into the newer one. The
-  # entry is inserted into the newer generation first and deleted from the
-  # older one after, so the entry is visible in at least one generation at
-  # all times. `insert_new/2` makes sure the promotion does not override a
-  # value a concurrent write may have already stored for the same key.
-  defp maybe_promote_entry({:ok, cached}, _name, backend, newer, older, key) do
-    _ = backend.insert_new(newer, cached)
-    true = backend.delete(older, key)
-
-    {:ok, cached}
-  end
-
-  defp maybe_promote_entry({:error, _} = error, name, backend, newer, _older, key) do
-    # A concurrent reader may have promoted the entry into the newer
-    # generation between the two lookups; check the newer generation again
-    # before reporting a miss. Return the original error to keep the reason
-    # (e.g., `:expired`).
-    with {:error, _} <- fetch_entry(name, backend, newer, key), do: error
   end
 
   @impl true
@@ -1083,16 +1076,16 @@ defmodule Nebulex.Adapters.Local do
         _opts
       ) do
     with_retry(fn ->
-      # Current time
+      # Current time.
       now = Time.now()
 
-      # Verify if the key has expired
+      # Verify if the key has expired.
       _ =
         meta_tab
         |> list_gen()
         |> do_fetch(name, backend, key)
 
-      # Run the counter operation
+      # Run the counter operation.
       meta_tab
       |> newer_gen()
       |> backend.update_counter(
@@ -1119,16 +1112,6 @@ defmodule Nebulex.Adapters.Local do
         {:ok, entry_ttl(res)}
       end
     end)
-  end
-
-  defp entry_ttl(entry(exp: :infinity)), do: :infinity
-
-  defp entry_ttl(entry(exp: exp)) do
-    exp - Time.now()
-  end
-
-  defp entry_ttl(entries) when is_list(entries) do
-    Enum.map(entries, &entry_ttl/1)
   end
 
   @impl true
@@ -1318,32 +1301,6 @@ defmodule Nebulex.Adapters.Local do
     |> wrap_ok()
   end
 
-  defp build_stream(%{meta_tab: meta_tab, backend: backend}, match_spec, page_size) do
-    Stream.resource(
-      fn ->
-        [newer | _] = generations = list_gen(meta_tab)
-
-        {backend.select(newer, match_spec, page_size), generations}
-      end,
-      fn
-        {:"$end_of_table", [_gen]} ->
-          {:halt, []}
-
-        {:"$end_of_table", [_gen | generations]} ->
-          result =
-            generations
-            |> hd()
-            |> backend.select(match_spec, page_size)
-
-          {[], {result, generations}}
-
-        {{elements, cont}, [_ | _] = generations} ->
-          {elements, {backend.select(cont), generations}}
-      end,
-      & &1
-    )
-  end
-
   ## Nebulex.Adapter.Info
 
   @impl true
@@ -1388,15 +1345,6 @@ defmodule Nebulex.Adapters.Local do
     )
   end
 
-  @impl true
-  def in_transaction?(adapter_meta, _opts) do
-    wrap_ok do_in_transaction?(adapter_meta)
-  end
-
-  defp do_in_transaction?(%{pid: pid}) do
-    !!Process.get({pid, self()})
-  end
-
   defp do_transaction(true, _pid, _name, _meta_tab, _opts, fun) do
     {:ok, fun.()}
   end
@@ -1423,19 +1371,18 @@ defmodule Nebulex.Adapters.Local do
     end
   end
 
-  ## Helpers
+  @impl true
+  def in_transaction?(adapter_meta, _opts) do
+    wrap_ok do_in_transaction?(adapter_meta)
+  end
 
-  # Inline common instructions
-  @compile [
-    inline: [
-      fetch_entry: 4,
-      pop_entry: 4,
-      list_gen: 1,
-      newer_gen: 1
-    ]
-  ]
+  defp do_in_transaction?(%{pid: pid}) do
+    !!Process.get({pid, self()})
+  end
 
-  @max_retries 3
+  ## Retry
+
+  @doc false
   def with_retry(fun, retries \\ @max_retries)
 
   def with_retry(fun, 0) do
@@ -1446,11 +1393,13 @@ defmodule Nebulex.Adapters.Local do
     fun.()
   rescue
     ArgumentError ->
-      # Retry will force fetching fresh generation references
+      # Retry will force fetching fresh generation references.
       :ok = Process.sleep(10)
 
       with_retry(fun, retries - 1)
   end
+
+  ## Private functions
 
   defmacrop backend_call(name, backend, tab, fun, key) do
     quote do
@@ -1475,31 +1424,6 @@ defmodule Nebulex.Adapters.Local do
     end
   end
 
-  defp get_tag(opts) do
-    case Keyword.fetch(opts, :tag) do
-      {:ok, tag} -> {true, tag}
-      :error -> {false, nil}
-    end
-  end
-
-  defp fetch_entry(name, backend, tab, key) do
-    backend_call(name, backend, tab, :lookup, key)
-  end
-
-  defp pop_entry(name, backend, tab, key) do
-    backend_call(name, backend, tab, :take, key)
-  end
-
-  defp list_gen(meta_tab) do
-    Metadata.fetch!(meta_tab, :generations)
-  end
-
-  defp newer_gen(meta_tab) do
-    meta_tab
-    |> Metadata.fetch!(:generations)
-    |> hd()
-  end
-
   defp validate_exp(entry(key: key, exp: exp) = entry, backend, tab, name) do
     if Time.now() >= exp do
       true = backend.delete(tab, key)
@@ -1510,11 +1434,77 @@ defmodule Nebulex.Adapters.Local do
     end
   end
 
+  defp fetch_entry(name, backend, tab, key) do
+    backend_call(name, backend, tab, :lookup, key)
+  end
+
+  defp list_gen(meta_tab) do
+    Metadata.fetch!(meta_tab, :generations)
+  end
+
+  defp get_tag(opts) do
+    case Keyword.fetch(opts, :tag) do
+      {:ok, tag} -> {true, tag}
+      :error -> {false, nil}
+    end
+  end
+
+  defp pop_entry(name, backend, tab, key) do
+    backend_call(name, backend, tab, :take, key)
+  end
+
+  defp newer_gen(meta_tab) do
+    meta_tab
+    |> Metadata.fetch!(:generations)
+    |> hd()
+  end
+
   defp exp(_now, :infinity), do: :infinity
   defp exp(now, ttl), do: now + ttl
 
-  defp lock_ids(name, []), do: [name]
-  defp lock_ids(name, keys), do: Enum.map(keys, &{name, &1})
+  defp return({:ok, entry(value: value)}, :value) do
+    {:ok, value}
+  end
+
+  defp return({:ok, entries}, :value) when is_list(entries) do
+    {:ok, for(entry(value: value) <- entries, do: value)}
+  end
+
+  defp return(other, _field) do
+    other
+  end
+
+  defp entry_ttl(entry(exp: :infinity)) do
+    :infinity
+  end
+
+  defp entry_ttl(entry(exp: exp)) do
+    exp - Time.now()
+  end
+
+  defp entry_ttl(entries) when is_list(entries) do
+    Enum.map(entries, &entry_ttl/1)
+  end
+
+  # An entry found in the older generation is moved into the newer one. The
+  # entry is inserted into the newer generation first and deleted from the
+  # older one after, so the entry is visible in at least one generation at
+  # all times. `insert_new/2` makes sure the promotion does not override a
+  # value a concurrent write may have already stored for the same key.
+  defp maybe_promote_entry({:ok, cached}, _name, backend, newer, older, key) do
+    _ = backend.insert_new(newer, cached)
+    true = backend.delete(older, key)
+
+    {:ok, cached}
+  end
+
+  defp maybe_promote_entry({:error, _} = error, name, backend, newer, _older, key) do
+    # A concurrent reader may have promoted the entry into the newer
+    # generation between the two lookups; check the newer generation again
+    # before reporting a miss. Return the original error to keep the reason
+    # (e.g., `:expired`).
+    with {:error, _} <- fetch_entry(name, backend, newer, key), do: error
+  end
 
   defp put_entry(
          meta_tab,
@@ -1563,6 +1553,11 @@ defmodule Nebulex.Adapters.Local do
     end
   end
 
+  # Removes the given entries' keys from the older generation.
+  defp purge_older_gen(backend, older_gen, entries) do
+    Enum.each(entries, fn entry(key: key) -> backend.delete(older_gen, key) end)
+  end
+
   defp put_new_entries(meta_tab, backend, entry(key: key) = entry) do
     do_put_new_entries(meta_tab, backend, entry, fn newer_gen, older_gen ->
       with true <- backend.insert_new(older_gen, entry) do
@@ -1581,11 +1576,6 @@ defmodule Nebulex.Adapters.Local do
         backend.insert_new(newer_gen, entries)
       end
     end)
-  end
-
-  # Removes the given entries' keys from the older generation.
-  defp purge_older_gen(backend, older_gen, entries) do
-    Enum.each(entries, fn entry(key: key) -> backend.delete(older_gen, key) end)
   end
 
   defp do_put_new_entries(meta_tab, backend, entry_or_entries, purge_fun) do
@@ -1625,6 +1615,32 @@ defmodule Nebulex.Adapters.Local do
     end)
   end
 
+  defp build_stream(%{meta_tab: meta_tab, backend: backend}, match_spec, page_size) do
+    Stream.resource(
+      fn ->
+        [newer | _] = generations = list_gen(meta_tab)
+
+        {backend.select(newer, match_spec, page_size), generations}
+      end,
+      fn
+        {:"$end_of_table", [_gen]} ->
+          {:halt, []}
+
+        {:"$end_of_table", [_gen | generations]} ->
+          result =
+            generations
+            |> hd()
+            |> backend.select(match_spec, page_size)
+
+          {[], {result, generations}}
+
+        {{elements, cont}, [_ | _] = generations} ->
+          {elements, {backend.select(cont), generations}}
+      end,
+      & &1
+    )
+  end
+
   # Read-only per-key lookups for `count_all` and `stream`; expired entries
   # are skipped but left in the table.
   defp lookup_keys(meta_tab, backend, keys) do
@@ -1653,18 +1669,6 @@ defmodule Nebulex.Adapters.Local do
         entry(exp: exp) = entry <- backend.take(gen, key),
         exp == :infinity or now < exp,
         do: entry
-  end
-
-  defp return({:ok, entry(value: value)}, :value) do
-    {:ok, value}
-  end
-
-  defp return({:ok, entries}, :value) when is_list(entries) do
-    {:ok, for(entry(value: value) <- entries, do: value)}
-  end
-
-  defp return(other, _field) do
-    other
   end
 
   defp ok_entries({:ok, entries}) when is_list(entries), do: entries
@@ -1755,4 +1759,7 @@ defmodule Nebulex.Adapters.Local do
 
     %{total: max_size, used: mem_size}
   end
+
+  defp lock_ids(name, []), do: [name]
+  defp lock_ids(name, keys), do: Enum.map(keys, &{name, &1})
 end

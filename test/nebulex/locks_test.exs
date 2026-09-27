@@ -1,9 +1,9 @@
 defmodule Nebulex.LocksTest do
   use ExUnit.Case, async: true
 
-  alias Nebulex.Locks
-
   import Record
+
+  alias Nebulex.Locks
 
   # Import lock record definition
   defrecord(:lock, key: nil, owner: nil, timestamp: nil, lock_timeout: nil)

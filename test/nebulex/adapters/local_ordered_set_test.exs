@@ -1,6 +1,10 @@
 defmodule Nebulex.Adapters.LocalOrderedSetTest do
   use ExUnit.Case, async: true
 
+  alias Nebulex.Adapters.LocalOrderedSetTest.{ETS, Shards}
+
+  ## Internals
+
   defmodule ETS do
     use Nebulex.Cache,
       otp_app: :nebulex_local,
@@ -13,7 +17,7 @@ defmodule Nebulex.Adapters.LocalOrderedSetTest do
       adapter: Nebulex.Adapters.Local
   end
 
-  alias Nebulex.Adapters.LocalOrderedSetTest.{ETS, Shards}
+  ## Tests
 
   setup do
     {:ok, ets} = ETS.start_link(backend_type: :ordered_set)

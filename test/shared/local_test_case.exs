@@ -465,11 +465,11 @@ defmodule Nebulex.Adapters.LocalTest do
         assert cache.count_all!(in: [{:_, :x}]) == 1
         assert cache.count_all!(in: [[:a, :_]]) == 1
 
-        # Map keys must match exactly (no partial matching)
+        # Map keys must match exactly (no partial matching).
         assert cache.get_all!(in: [%{a: 1}]) == [{%{a: 1}, 5}]
         assert cache.count_all!(in: [%{a: 1}]) == 1
 
-        # `:_` must be treated as a regular key, not as a wildcard
+        # `:_` must be treated as a regular key, not as a wildcard.
         assert cache.delete_all!(in: [:_]) == 1
         assert cache.count_all!() == 6
       end
@@ -519,11 +519,11 @@ defmodule Nebulex.Adapters.LocalTest do
         assert cache.put_all([a: 1, b: 2, c: 3], tag: :foo) == :ok
         assert cache.put_all([d: 4, e: 5, f: 6], tag: :bar) == :ok
 
-        # Get values for a specific tag
+        # Get values for a specific tag.
         ms = match_spec value: v, tag: t, where: t == :foo, select: v
         assert cache.get_all!(query: ms) |> Enum.sort() == [1, 2, 3]
 
-        # Get key-value pairs for multiple tags
+        # Get key-value pairs for multiple tags.
         ms = match_spec key: k, value: v, tag: t, where: t == :foo or t == :bar, select: {k, v}
         result = cache.get_all!(query: ms) |> Enum.sort()
         assert result == Enum.sort(a: 1, b: 2, c: 3, d: 4, e: 5, f: 6)
@@ -533,11 +533,11 @@ defmodule Nebulex.Adapters.LocalTest do
         assert cache.put_all([a: 1, b: 2, c: 3], tag: :foo) == :ok
         assert cache.put_all([d: 4, e: 5, f: 6], tag: :bar) == :ok
 
-        # Count entries with specific tag (using default select: true)
+        # Count entries with specific tag (using default select: true).
         ms = match_spec tag: t, where: t == :foo
         assert cache.count_all!(query: ms) == 3
 
-        # Count entries with multiple tags (using default select: true)
+        # Count entries with multiple tags (using default select: true).
         ms = match_spec tag: t, where: t == :foo or t == :bar
         assert cache.count_all!(query: ms) == 6
       end
@@ -546,15 +546,15 @@ defmodule Nebulex.Adapters.LocalTest do
         assert cache.put_all([a: 1, b: 2, c: 3], tag: :foo) == :ok
         assert cache.put_all([d: 4, e: 5, f: 6], tag: :bar) == :ok
 
-        # Delete entries with specific tag (using default select: true)
+        # Delete entries with specific tag (using default select: true).
         ms = match_spec tag: t, where: t == :foo
         assert cache.delete_all!(query: ms) == 3
 
-        # Verify deletion (using default select: true)
+        # Verify deletion (using default select: true).
         ms = match_spec tag: t, where: t == :foo
         assert cache.count_all!(query: ms) == 0
 
-        # Only :bar entries should remain (using default select: true)
+        # Only :bar entries should remain (using default select: true).
         ms = match_spec tag: t, where: t == :bar
         assert cache.count_all!(query: ms) == 3
       end
@@ -563,11 +563,11 @@ defmodule Nebulex.Adapters.LocalTest do
         assert cache.put_all([a: 1, b: 2, c: 3], tag: :test) == :ok
 
         # Even though we select {k, v}, delete_all should work because
-        # the adapter overrides the return value to true
+        # the adapter overrides the return value to true.
         ms = match_spec key: k, value: v, tag: t, where: t == :test, select: {k, v}
         assert cache.delete_all!(query: ms) == 3
 
-        # Verify all entries were deleted
+        # Verify all entries were deleted.
         assert cache.count_all!() == 0
       end
 
@@ -575,7 +575,7 @@ defmodule Nebulex.Adapters.LocalTest do
         assert cache.put_all([a: 1, b: 2, c: 3], tag: :foo) == :ok
         assert cache.put_all([d: 4, e: 5, f: 6], tag: :bar) == :ok
 
-        # Stream values for a specific tag
+        # Stream values for a specific tag.
         ms = match_spec value: v, tag: t, where: t == :foo, select: v
         {:ok, stream} = cache.stream([query: ms], max_entries: 2)
         result = Enum.to_list(stream) |> Enum.sort()
@@ -583,12 +583,12 @@ defmodule Nebulex.Adapters.LocalTest do
       end
 
       test "QueryHelper: complex queries with multiple fields", %{cache: cache} do
-        # Put entries with different value types
+        # Put entries with different value types.
         assert cache.put_all([a: 10, b: 20, c: 30], tag: :numbers) == :ok
         assert cache.put_all([d: "foo", e: "bar"], tag: :strings) == :ok
         assert cache.put_all([f: 5, g: 15], tag: :numbers) == :ok
 
-        # Get all integer values greater than 10 with :numbers tag
+        # Get all integer values greater than 10 with :numbers tag.
         ms =
           match_spec key: k,
                      value: v,
@@ -599,7 +599,7 @@ defmodule Nebulex.Adapters.LocalTest do
         result = cache.get_all!(query: ms) |> Enum.sort()
         assert result == Enum.sort(b: 20, c: 30, g: 15)
 
-        # Count string values (using default select: true)
+        # Count string values (using default select: true).
         ms = match_spec value: v, tag: t, where: is_binary(v) and t == :strings
         assert cache.count_all!(query: ms) == 2
       end
@@ -1012,39 +1012,39 @@ defmodule Nebulex.Adapters.LocalTest do
       end
 
       test "lifecycle", %{cache: cache, name: name} do
-        # should be empty
+        # Should be empty.
         assert {:error, %Nebulex.KeyError{key: 1}} = cache.fetch(1)
 
-        # set some entries
+        # Set some entries.
         for x <- 1..2, do: cache.put(x, x)
 
-        # fetch one entry from new generation
+        # Fetch one entry from new generation.
         assert cache.fetch!(1) == 1
 
-        # fetch non-existent entries
+        # Fetch non-existent entries.
         assert {:error, %Nebulex.KeyError{key: 3}} = cache.fetch(3)
         assert {:error, %Nebulex.KeyError{key: :non_existent}} = cache.fetch(:non_existent)
 
-        # create a new generation
+        # Create a new generation.
         _ = new_generation(cache, name)
 
-        # both entries should be in the old generation
+        # Both entries should be in the old generation.
         refute get_from_new(cache, name, 1)
         refute get_from_new(cache, name, 2)
         assert get_from_old(cache, name, 1) == 1
         assert get_from_old(cache, name, 2) == 2
 
-        # fetch entry 1 and put it into the new generation
+        # Fetch entry 1 and put it into the new generation.
         assert cache.fetch!(1) == 1
         assert get_from_new(cache, name, 1) == 1
         refute get_from_new(cache, name, 2)
         refute get_from_old(cache, name, 1)
         assert get_from_old(cache, name, 2) == 2
 
-        # create a new generation, the old generation should be deleted
+        # Create a new generation, the old generation should be deleted.
         _ = new_generation(cache, name)
 
-        # entry 1 should be into the old generation and entry 2 deleted
+        # Entry 1 should be into the old generation and entry 2 deleted.
         refute get_from_new(cache, name, 1)
         refute get_from_new(cache, name, 2)
         assert get_from_old(cache, name, 1) == 1
@@ -1071,15 +1071,15 @@ defmodule Nebulex.Adapters.LocalTest do
 
     describe "race conditions and automatic retry" do
       test "concurrent operations during garbage collection", %{cache: cache, name: name} do
-        # Populate cache with entries
+        # Populate cache with entries.
         entries = for x <- 1..50, into: %{}, do: {x, x * 2}
         :ok = cache.put_all(entries)
 
-        # Spawn multiple processes that will read/write during GC
+        # Spawn multiple processes that will read/write during GC.
         tasks =
           for i <- 1..20 do
             task_async(cache, name, fn ->
-              # Perform various operations that might race with GC
+              # Perform various operations that might race with GC.
               cache.put("concurrent_#{i}", i)
               cache.fetch!("concurrent_#{i}")
               cache.get!(1)
@@ -1087,33 +1087,33 @@ defmodule Nebulex.Adapters.LocalTest do
             end)
           end
 
-        # Trigger GC while tasks are running
+        # Trigger GC while tasks are running.
         _ = new_generation(cache, name)
         _ = new_generation(cache, name)
 
-        # All tasks should complete successfully without crashes
+        # All tasks should complete successfully without crashes.
         results = Task.await_many(tasks, 5000)
         assert Enum.count(results) == 20
       end
 
       test "fetch during generation deletion", %{cache: cache, name: name} do
-        # Put entries in old generation
+        # Put entries in old generation.
         :ok = cache.put_all(for x <- 1..100, do: {x, x})
         _ = new_generation(cache, name)
 
-        # Spawn processes that fetch while we delete the old generation
+        # Spawn processes that fetch while we delete the old generation.
         tasks =
           for x <- 1..100 do
             task_async(cache, name, fn ->
-              # This should succeed even if generation is deleted during access
+              # This should succeed even if generation is deleted during access.
               cache.fetch(x)
             end)
           end
 
-        # Trigger another generation change (will delete old generation)
+        # Trigger another generation change (will delete old generation).
         _ = new_generation(cache, name)
 
-        # All fetches should succeed (entries move to new generation on access)
+        # All fetches should succeed (entries move to new generation on access).
         results = Task.await_many(tasks, 5000)
         assert Enum.count(results) == 100
       end
@@ -1172,10 +1172,10 @@ defmodule Nebulex.Adapters.LocalTest do
       end
 
       test "put operations during generation transitions", %{cache: cache, name: name} do
-        # Initial data
+        # Initial data.
         :ok = cache.put_all(for x <- 1..50, do: {x, x})
 
-        # Spawn tasks that perform puts during GC
+        # Spawn tasks that perform puts during GC.
         tasks =
           for x <- 51..100 do
             task_async(cache, name, fn ->
@@ -1184,11 +1184,11 @@ defmodule Nebulex.Adapters.LocalTest do
             end)
           end
 
-        # Trigger multiple generation changes
+        # Trigger multiple generation changes.
         _ = new_generation(cache, name)
         _ = new_generation(cache, name)
 
-        # All puts should succeed
+        # All puts should succeed.
         results = Task.await_many(tasks, 5000)
         assert Enum.all?(results, &(&1 == {:ok, true}))
       end
@@ -1196,61 +1196,61 @@ defmodule Nebulex.Adapters.LocalTest do
       test "delete_all with query during generation change", %{cache: cache, name: name} do
         import Ex2ms
 
-        # Put tagged entries
+        # Put tagged entries.
         :ok = cache.put_all(for(x <- 1..50, do: {x, x}), tag: :group_a)
         :ok = cache.put_all(for(x <- 51..100, do: {x, x}), tag: :group_b)
 
-        # Create match spec for group_a
+        # Create match spec for group_a.
         test_ms =
           fun do
             {_, _, _, _, _, tag} when tag == :group_a -> true
           end
 
-        # Spawn task to delete while we change generations
+        # Spawn task to delete while we change generations.
         task =
           task_async(cache, name, fn ->
             cache.delete_all!(query: test_ms)
           end)
 
-        # Trigger generation change during delete operation
+        # Trigger generation change during delete operation.
         _ = new_generation(cache, name)
 
-        # Delete should succeed
+        # Delete should succeed.
         deleted_count = Task.await(task, 5000)
         assert deleted_count >= 0 and deleted_count <= 50
 
-        # Verify only group_b entries remain (or were also affected by GC)
+        # Verify only group_b entries remain (or were also affected by GC).
         remaining = cache.count_all!()
         assert remaining >= 0 and remaining <= 100
       end
 
       test "stream operations during generation deletion", %{cache: cache, name: name} do
-        # Put entries
+        # Put entries.
         :ok = cache.put_all(for x <- 1..100, do: {x, x * 2})
         _ = new_generation(cache, name)
 
-        # Start streaming
+        # Start streaming.
         stream_task =
           task_async(cache, name, fn ->
             {:ok, stream} = cache.stream([select: :value], max_entries: 10)
             Enum.to_list(stream)
           end)
 
-        # Delete generation while streaming
+        # Delete generation while streaming.
         :ok = Process.sleep(10)
         _ = new_generation(cache, name)
 
-        # Stream should complete without errors (may have partial results)
+        # Stream should complete without errors (may have partial results).
         result = Task.await(stream_task, 5000)
         assert is_list(result)
       end
 
       test "update_counter during generation change", %{cache: cache, name: name} do
-        # Initial counter
+        # Initial counter.
         assert cache.incr!(:counter, 1) == 1
         _ = new_generation(cache, name)
 
-        # Spawn multiple tasks incrementing counter during GC
+        # Spawn multiple tasks incrementing counter during GC.
         tasks =
           for _ <- 1..50 do
             task_async(cache, name, fn ->
@@ -1258,29 +1258,29 @@ defmodule Nebulex.Adapters.LocalTest do
             end)
           end
 
-        # Trigger generation change
+        # Trigger generation change.
         _ = new_generation(cache, name)
 
-        # All increments should succeed
+        # All increments should succeed.
         results = Task.await_many(tasks, 5000)
         assert Enum.count(results) == 50
 
-        # Final counter value should reflect all increments
+        # Final counter value should reflect all increments.
         final_value = cache.get!(:counter)
         assert final_value >= 1 and final_value <= 51
       end
 
       test "mixed operations with high concurrency", %{cache: cache, name: name} do
-        # Initial data
+        # Initial data.
         :ok = cache.put_all(for x <- 1..20, do: {x, x})
 
-        # Spawn mix of operations
+        # Spawn mix of operations.
         read_tasks = for x <- 1..20, do: task_async(cache, name, fn -> cache.get!(x) end)
         write_tasks = for x <- 21..40, do: task_async(cache, name, fn -> cache.put!(x, x) end)
         delete_tasks = for x <- 1..10, do: task_async(cache, name, fn -> cache.delete!(x) end)
         count_tasks = for _ <- 1..5, do: task_async(cache, name, fn -> cache.count_all!() end)
 
-        # Trigger multiple generation changes during operations
+        # Trigger multiple generation changes during operations.
         gc_task =
           task_async(cache, name, fn ->
             _ = new_generation(cache, name)
@@ -1289,11 +1289,11 @@ defmodule Nebulex.Adapters.LocalTest do
             :ok
           end)
 
-        # Wait for all operations
+        # Wait for all operations.
         Task.await(gc_task, 5000)
         Task.await_many(read_tasks ++ write_tasks ++ delete_tasks ++ count_tasks, 5000)
 
-        # Cache should be in consistent state
+        # Cache should be in consistent state.
         count = cache.count_all!()
         assert count >= 0 and count <= 40
       end

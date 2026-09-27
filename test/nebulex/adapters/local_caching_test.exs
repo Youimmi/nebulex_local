@@ -1,5 +1,11 @@
 defmodule Nebulex.Adapters.LocalCachingTest do
   use ExUnit.Case, async: true
+  use Nebulex.Caching, cache: __MODULE__.Cache
+  use Nebulex.Adapters.Local.QueryHelper
+
+  import Nebulex.CacheCase
+
+  ## Internals
 
   defmodule Cache do
     @moduledoc false
@@ -7,11 +13,6 @@ defmodule Nebulex.Adapters.LocalCachingTest do
       otp_app: :nebulex_local,
       adapter: Nebulex.Adapters.Local
   end
-
-  use Nebulex.Caching, cache: Cache
-  use Nebulex.Adapters.Local.QueryHelper
-
-  import Nebulex.CacheCase
 
   ## Tests
 
