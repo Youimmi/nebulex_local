@@ -826,6 +826,7 @@ defmodule Nebulex.Adapters.Local do
   import Nebulex.Utils
   import Record
 
+  alias Nebulex.Adapter
   alias Nebulex.Adapters.Common.Info.Stats
   alias Nebulex.Adapters.Local.{Backend, Generation, Metadata}
   alias Nebulex.Locks
@@ -839,8 +840,7 @@ defmodule Nebulex.Adapters.Local do
     inline: [
       fetch_entry: 4,
       pop_entry: 4,
-      list_gen: 1,
-      newer_gen: 1
+      list_gen: 1
     ]
   ]
 
@@ -989,9 +989,11 @@ defmodule Nebulex.Adapters.Local do
     {has_tag?, tag} = get_tag(opts)
     entry = entry(key: key, value: value, touched: now, exp: exp(now, ttl), tag: tag)
 
-    with_retry(fn ->
-      do_put(on_write, adapter_meta.meta_tab, adapter_meta.backend, entry, keep_ttl?, has_tag?)
-      |> wrap_ok()
+    Metadata.with_lock(adapter_meta.meta_tab, key, fn ->
+      with_retry(fn ->
+        do_put(on_write, adapter_meta.meta_tab, adapter_meta.backend, entry, keep_ttl?, has_tag?)
+        |> wrap_ok()
+      end)
     end)
   end
 
@@ -1011,8 +1013,8 @@ defmodule Nebulex.Adapters.Local do
          keep_ttl?,
          has_tag?
        ) do
-    changes = if has_tag?, do: [], else: [{6, tag}]
-    changes = if keep_ttl?, do: changes, else: [{4, touched}, {5, exp}]
+    changes = if has_tag?, do: [{6, tag}], else: []
+    changes = if keep_ttl?, do: changes, else: [{4, touched}, {5, exp} | changes]
 
     update_entry(meta_tab, backend, key, [{3, value} | changes])
   end
@@ -1047,17 +1049,21 @@ defmodule Nebulex.Adapters.Local do
 
   @impl true
   def delete(adapter_meta, key, _opts) do
-    with_retry(fn ->
-      adapter_meta.meta_tab
-      |> list_gen()
-      |> Enum.each(&adapter_meta.backend.delete(&1, key))
+    Metadata.with_lock(adapter_meta.meta_tab, key, fn ->
+      with_retry(fn ->
+        adapter_meta.meta_tab
+        |> list_gen()
+        |> Enum.each(&adapter_meta.backend.delete(&1, key))
+      end)
     end)
   end
 
   @impl true
   def take(%{name: name, meta_tab: meta_tab, backend: backend}, key, _opts) do
-    with_retry(fn ->
-      do_take(meta_tab, backend, name, key)
+    Metadata.with_lock(meta_tab, key, fn ->
+      with_retry(fn ->
+        do_take(meta_tab, backend, name, key)
+      end)
     end)
   end
 
@@ -1081,25 +1087,20 @@ defmodule Nebulex.Adapters.Local do
         ttl,
         _opts
       ) do
-    with_retry(fn ->
-      # Current time.
-      now = Time.now()
+    Metadata.with_lock(meta_tab, key, fn ->
+      with_retry(fn ->
+        now = Time.now()
+        [newer | _] = generations = list_gen(meta_tab)
+        _ = fetch_and_promote(generations, name, backend, key)
 
-      # Verify if the key has expired.
-      _ =
-        meta_tab
-        |> list_gen()
-        |> do_fetch(name, backend, key)
-
-      # Run the counter operation.
-      meta_tab
-      |> newer_gen()
-      |> backend.update_counter(
-        key,
-        {3, amount},
-        entry(key: key, value: default, touched: now, exp: exp(now, ttl))
-      )
-      |> wrap_ok()
+        newer
+        |> backend.update_counter(
+          key,
+          {3, amount},
+          entry(key: key, value: default, touched: now, exp: exp(now, ttl))
+        )
+        |> wrap_ok()
+      end)
     end)
   end
 
@@ -1124,19 +1125,23 @@ defmodule Nebulex.Adapters.Local do
   def expire(adapter_meta, key, ttl, _opts) do
     now = Time.now()
 
-    with_retry(fn ->
-      adapter_meta.meta_tab
-      |> update_entry(adapter_meta.backend, key, [{4, now}, {5, exp(now, ttl)}])
-      |> wrap_ok()
+    Metadata.with_lock(adapter_meta.meta_tab, key, fn ->
+      with_retry(fn ->
+        adapter_meta.meta_tab
+        |> update_entry(adapter_meta.backend, key, [{4, now}, {5, exp(now, ttl)}])
+        |> wrap_ok()
+      end)
     end)
   end
 
   @impl true
   def touch(adapter_meta, key, _opts) do
-    with_retry(fn ->
-      adapter_meta.meta_tab
-      |> update_entry(adapter_meta.backend, key, [{4, Time.now()}])
-      |> wrap_ok()
+    Metadata.with_lock(adapter_meta.meta_tab, key, fn ->
+      with_retry(fn ->
+        adapter_meta.meta_tab
+        |> update_entry(adapter_meta.backend, key, [{4, Time.now()}])
+        |> wrap_ok()
+      end)
     end)
   end
 
@@ -1449,12 +1454,6 @@ defmodule Nebulex.Adapters.Local do
     backend_call(name, backend, tab, :take, key)
   end
 
-  defp newer_gen(meta_tab) do
-    meta_tab
-    |> Metadata.fetch!(:generations)
-    |> hd()
-  end
-
   defp exp(_now, :infinity), do: :infinity
   defp exp(now, ttl), do: now + ttl
 
@@ -1487,11 +1486,14 @@ defmodule Nebulex.Adapters.Local do
   # older one after, so the entry is visible in at least one generation at
   # all times. `insert_new/2` makes sure the promotion does not override a
   # value a concurrent write may have already stored for the same key.
-  defp maybe_promote_entry({:ok, cached}, _name, backend, newer, older, key) do
-    _ = backend.insert_new(newer, cached)
-    true = backend.delete(older, key)
+  defp maybe_promote_entry({:ok, _cached}, name, backend, _newer, _older, key) do
+    meta_tab = Adapter.lookup_meta(name).meta_tab
 
-    {:ok, cached}
+    Metadata.with_lock(meta_tab, key, fn ->
+      meta_tab
+      |> list_gen()
+      |> fetch_and_promote(name, backend, key)
+    end)
   end
 
   defp maybe_promote_entry({:error, _} = error, name, backend, newer, _older, key) do
@@ -1500,6 +1502,23 @@ defmodule Nebulex.Adapters.Local do
     # before reporting a miss. Return the original error to keep the reason
     # (e.g., `:expired`).
     with {:error, _} <- fetch_entry(name, backend, newer, key), do: error
+  end
+
+  # Re-read the entry while holding its lock: a previous lookup may have
+  # preceded a deletion or a counter update. Both the lookup and mutation
+  # use the same generation snapshot, even when the GC rotates it.
+  defp fetch_and_promote([newer], name, backend, key) do
+    fetch_entry(name, backend, newer, key)
+  end
+
+  defp fetch_and_promote([newer, older], name, backend, key) do
+    with {:error, _} <- fetch_entry(name, backend, newer, key),
+         {:ok, cached} <- fetch_entry(name, backend, older, key) do
+      _ = backend.insert_new(newer, cached)
+      true = backend.delete(older, key)
+
+      {:ok, cached}
+    end
   end
 
   defp put_entry(
@@ -1671,16 +1690,16 @@ defmodule Nebulex.Adapters.Local do
     |> reduce_live_entries(keys, &backend.lookup/2, acc, fun)
   end
 
-  # Per-key removals for `delete_all`. Generations are newest-first; visit
-  # the older generation first, so an entry that a `fetch` promotes while the
-  # removal runs is found in one of the two generations. `take` also removes
-  # an expired entry stored under the key (lazy expiration), but expired
-  # entries are filtered out here so they are not counted.
+  # Per-key removals for `delete_all` share the promotion lock. `take` also
+  # removes an expired entry, but expired entries are not counted.
   defp take_keys(meta_tab, backend, keys, acc, fun) do
-    meta_tab
-    |> list_gen()
-    |> Enum.reverse()
-    |> reduce_live_entries(keys, &take_entries(backend, &1, &2), acc, fun)
+    Enum.reduce(keys, acc, fn key, acc ->
+      Metadata.with_lock(meta_tab, key, fn ->
+        meta_tab
+        |> list_gen()
+        |> reduce_live_entries([key], &take_entries(backend, &1, &2), acc, fun)
+      end)
+    end)
   end
 
   # Reduces the unexpired entries stored under each key with `fun`, visiting

@@ -67,7 +67,7 @@ attention to these rules, which are easy to miss:
 - `lib/nebulex/adapters/local/backend/ets.ex` - ETS backend.
 - `lib/nebulex/adapters/local/backend/shards.ex` - `:shards` backend (partitioned tables).
 - `lib/nebulex/adapters/local/generation.ex` - Generation manager and garbage collector (GenServer).
-- `lib/nebulex/adapters/local/metadata.ex` - ETS-backed adapter metadata store.
+- `lib/nebulex/adapters/local/metadata.ex` - ETS-backed adapter metadata and internal per-key locks.
 - `lib/nebulex/adapters/local/options.ex` - Adapter option definitions and docs.
 - `lib/nebulex/adapters/local/query_helper.ex` - SQL-like match-spec builder and `keyref_match_spec/2`.
 - `lib/nebulex/locks.ex` - ETS-based local locks used by transactions.

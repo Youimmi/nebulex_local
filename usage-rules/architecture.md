@@ -50,6 +50,18 @@ Instead of expiring individual entries with timers, the adapter maintains
 - When the GC runs (on `:gc_interval` timeout or memory threshold), a new
   generation is created and the oldest is deleted — no per-entry timer needed.
 
+Single-key writes and promotion share an internal per-key lock. Promotion
+rechecks the entry after acquiring the lock, so a stale read cannot restore
+an entry removed by `delete`, `take`, or `delete_all(in: keys)`. Counters use
+one generation snapshot for validation, promotion, and increment. Hits in
+the newest generation remain lock-free. Bulk writes and match-spec queries
+retain their existing non-transactional semantics.
+
+These locks live in a separate ETS table owned with the adapter metadata;
+they do not use the configurable transaction lock leases. A lock is released
+when the operation returns or raises, and a subsequent contender can reclaim
+it if its owner has died.
+
 This design makes TTL-based expiration approximate: entries expire somewhere
 between one and two GC intervals after their TTL elapses.
 
@@ -64,7 +76,7 @@ lib/
     |   +-- local.ex              # Main adapter — public API + behaviour impl
     |   +-- local/
     |       +-- generation.ex     # GC manager (GenServer) — owns ETS tables
-    |       +-- metadata.ex       # ETS metadata table (generation refs, stats)
+    |       +-- metadata.ex       # ETS metadata and internal per-key locks
     |       +-- backend.ex        # Backend behaviour (ETS vs Shards)
     |       +-- backend/
     |       |   +-- ets.ex        # Default ETS backend
@@ -82,7 +94,7 @@ lib/
 |---|---|
 | `Nebulex.Adapters.Local` | Adapter entry point — implements all behaviours, delegates to generation/backend |
 | Nebulex.Adapters.Local.Generation | GenServer managing GC lifecycle and ETS table rotation |
-| Nebulex.Adapters.Local.Metadata | ETS metadata table holding current generation references and stats counters |
+| Nebulex.Adapters.Local.Metadata | ETS metadata holding generation references, stats counters, and internal per-key locks |
 | Nebulex.Adapters.Local.Backend | Behaviour defining the ETS/Shards abstraction |
 | Nebulex.Adapters.Local.Backend.ETS | Default single-table ETS backend |
 | Nebulex.Adapters.Local.Backend.Shards | Partitioned ETS backend via `:shards` (optional dep) |
